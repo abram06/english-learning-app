@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import WelcomeScreen from '../features/onboarding/screens/WelcomeScreen';
@@ -7,15 +7,22 @@ import { useUser } from '@/context/UserContext';
 export default function Index() {
   const router = useRouter();
   const { userName, isLoading } = useUser();
+  const [isReturningUser, setIsReturningUser] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (!isLoading && userName) {
+    // Espera a que AsyncStorage termine de revisar si ya hay un nombre guardado.
+    if (isLoading || isReturningUser !== null) return;
+
+    const hasSavedUser = Boolean(userName);
+    setIsReturningUser(hasSavedUser);
+
+    // Solo quienes ya habían completado la bienvenida van directo a Inicio.
+    if (hasSavedUser) {
       router.replace('/main');
     }
-  }, [isLoading, userName]);
+  }, [isLoading, isReturningUser, router, userName]);
 
-  // Mientras leemos el storage, no mostramos nada todavía (evita parpadeos)
-  if (isLoading) {
+  if (isLoading || isReturningUser === null) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" />
@@ -23,9 +30,7 @@ export default function Index() {
     );
   }
 
-  // Si ya había un nombre guardado, este componente ya va camino a /main
-  // (por el useEffect de arriba), así que no mostramos el onboarding
-  if (userName) {
+  if (isReturningUser) {
     return null;
   }
 

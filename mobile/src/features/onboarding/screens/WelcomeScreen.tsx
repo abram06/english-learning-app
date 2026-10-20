@@ -58,13 +58,6 @@ export default function WelcomeScreen() {
         onExit={handleExit}
       />
 
-
-      <Character
-        walkingOut={stage === 'walking-out'}
-        onArrive={handleArrive}
-        onExit={handleExit}
-      />
-
       {stage === 'greeting' && (
         <DialogueBox message="¡Hola! 👋 Bienvenido a tu aventura para aprender inglés." />
       )}
