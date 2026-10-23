@@ -1,5 +1,7 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import ReadingHistory from '@/features/reading/components/ReadingHistory';
+import { useRouter } from 'expo-router';
 import { useUser } from '@/context/UserContext';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 // Colores que usaremos en esta pantalla.
 const COLORS = {
@@ -16,6 +18,7 @@ const COLORS = {
 export default function HomeScreen() {
   // Recupera el nombre que el usuario escribió durante la bienvenida.
   const { userName } = useUser();
+  const router = useRouter();
 
   return (
     // ScrollView permite desplazar la pantalla en teléfonos pequeños.
@@ -24,6 +27,8 @@ export default function HomeScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
+      
+      
       {/* Encabezado: identidad de la app y racha actual. */}
       <View style={styles.header}>
         <View style={styles.brand}>
@@ -33,12 +38,15 @@ export default function HomeScreen() {
             <Text style={styles.brandSubtitle}>y Jugando</Text>
           </View>
         </View>
+        
 
         <View style={styles.streakBadge}>
           <Text>🔥</Text>
           <Text style={styles.streakText}>0 días</Text>
         </View>
       </View>
+
+      
 
       {/* Saludo personalizado y nivel inicial. */}
       <Text style={styles.eyebrow}>TU AVENTURA DE HOY</Text>
@@ -87,18 +95,24 @@ export default function HomeScreen() {
       {/* Accesos visuales a las actividades que construiremos después. */}
       <Text style={styles.sectionTitle}>ELIGE TU PRÁCTICA</Text>
 
-      <View style={styles.activityCard}>
-        <View style={[styles.activityIcon, { backgroundColor: '#E7E5FF' }]}>
-          <Text style={styles.activityEmoji}>📚</Text>
-        </View>
-        <View style={styles.activityText}>
-          <Text style={styles.activityTitle}>Lecturas</Text>
-          <Text style={styles.activityDescription}>
-            Lee historias y descubre palabras nuevas.
-          </Text>
-        </View>
-        <Text style={styles.comingSoon}>PRÓXIMAMENTE</Text>
-      </View>
+      <Pressable
+  style={styles.activityCard}
+  onPress={() => router.push('/main/explore')}
+  accessibilityRole="button"
+>
+  <View style={[styles.activityIcon, { backgroundColor: '#E7E5FF' }]}>
+    <Text style={styles.activityEmoji}>📚</Text>
+  </View>
+
+  <View style={styles.activityText}>
+    <Text style={styles.activityTitle}>Reading</Text>
+    <Text style={styles.activityDescription}>
+      Lee historias y descubre palabras nuevas.
+    </Text>
+  </View>
+
+  <Text style={styles.comingSoon}>ABRIR →</Text>
+</Pressable>
 
       <View style={styles.activityCard}>
         <View style={[styles.activityIcon, { backgroundColor: '#D1FAE5' }]}>
@@ -112,6 +126,10 @@ export default function HomeScreen() {
         </View>
         <Text style={styles.comingSoon}>PRÓXIMAMENTE</Text>
       </View>
+
+      {/* Muestra los intentos de lectura guardados en SQLite. */}
+      <ReadingHistory />
+   
     </ScrollView>
   );
 }

@@ -1,12 +1,29 @@
-// Usa las voces disponibles en el dispositivo o navegador para leer en voz alta.
-import * as Speech from 'expo-speech';
+// Guarda localmente el resultado del cuestionario.
+import { saveReadingAttempt } from '@/features/reading/services/readingHistory';
 
+// Servicios de lectura, traducción y pronunciación.
+import {
+  fetchWordTranslation,
+  generateReading,
+} from '@/features/reading/services/readingApi';
+import {
+  speakEnglish,
+  stopSpeaking,
+  stopSpeech,
+} from '@/features/reading/services/speech';
+
+// Tipos y componentes de la función de lectura.
+import type { Reading } from '@/features/reading/types';
 import ComprehensionQuiz from '@/features/reading/components/ComprehensionQuiz';
 
+// Herramientas de navegación y estado de React.
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
+
+// Guarda traducciones en el dispositivo.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Elementos visuales de React Native.
 import {
   ActivityIndicator,
   Pressable,
@@ -16,42 +33,20 @@ import {
   View,
 } from 'react-native';
 
-// Dirección del backend local durante el desarrollo.
-// En un teléfono físico o al publicar la app, esta dirección deberá cambiar.
-const API_BASE_URL = 'http://127.0.0.1:8000';
+// Mantiene la pantalla dentro del área visible del teléfono,
+// respetando la barra de estado, la cámara y los bordes seguros.
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-// Nombre con el que guardamos las traducciones en el dispositivo.
+// Clave usada para guardar la caché de traducciones en el dispositivo.
 const TRANSLATION_CACHE_KEY = 'translation_cache_v1';
 
-// Describe una pregunta de comprensión recibida desde FastAPI.
-type ComprehensionQuestion = {
-  question: string;
-  options: string[];
-  correct_index: number;
-  explanation: string;
-};
-
-// Describe la lectura generada por Gemini y enviada por el backend.
-type Reading = {
-  title: string;
-  paragraphs: string[];
-  questions: ComprehensionQuestion[];
-  topic: string;
-  level: string;
-  model_used: string;
-};
-
-// Describe los datos que puede devolver el endpoint /translate.
-type TranslationResponse = {
-  translation?: string;
-  detail?: string;
-};
-
 export default function ReaderScreen() {
-  // Permite navegar hacia atrás usando Expo Router.
   const router = useRouter();
 
-  // Recibe el tema y el nivel que envió la pantalla de lecturas.
+  // Evita guardar dos veces el mismo resultado del cuestionario.
+  const historySavedForCurrentReadingRef = useRef(false);
+
+  // Obtiene el tema y nivel enviados desde la pantalla anterior.
   const { topic, level } = useLocalSearchParams<{
     topic?: string;
     level?: string;
@@ -61,48 +56,45 @@ export default function ReaderScreen() {
   const selectedTopic = typeof topic === 'string' ? topic : 'Vida diaria';
   const selectedLevel = typeof level === 'string' ? level : 'Principiante';
 
-  // Guarda el artículo que devuelve el backend.
+  // Lectura que genera y devuelve el backend.
   const [reading, setReading] = useState<Reading | null>(null);
 
-  // Controla la carga y los errores al pedir una lectura.
+  // Estados para mostrar carga o errores.
   const [isLoading, setIsLoading] = useState(true);
   const [readingError, setReadingError] = useState('');
 
-  // Al cambiar este número, el efecto solicita una lectura nueva.
+  // Cambiar este valor vuelve a solicitar una lectura.
   const [newReadingRequest, setNewReadingRequest] = useState(0);
 
-  // Guarda las respuestas elegidas: número de pregunta → número de opción.
-  // Por ejemplo, { 0: 1 } significa que eligió la segunda opción de la primera pregunta.
+  // Guarda la opción elegida para cada pregunta.
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({});
 
-  // Guarda la palabra seleccionada y el resultado de su traducción.
+  // Estados de la palabra seleccionada y su traducción.
   const [selectedWord, setSelectedWord] = useState('');
   const [translation, setTranslation] = useState('');
   const [translationError, setTranslationError] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
 
-  // Indica si se está reproduciendo audio.
+  // Indica si el audio se está reproduciendo.
   const [isSpeaking, setIsSpeaking] = useState(false);
 
-  // Guarda las traducciones en memoria mientras la pantalla está abierta.
+  // Caché en memoria para acceder rápidamente a traducciones.
   const translationCacheRef = useRef<Record<string, string>>({});
 
-  // Permite esperar a que termine la carga inicial de traducciones guardadas.
+  // Permite esperar a que AsyncStorage termine de cargar la caché.
   const cacheLoadPromiseRef = useRef<Promise<void>>(Promise.resolve());
 
-  // Al abrir el lector, carga las traducciones guardadas en el dispositivo.
+  // Carga las traducciones guardadas al abrir el lector.
   useEffect(() => {
     cacheLoadPromiseRef.current = (async () => {
       try {
-        const savedCache = await AsyncStorage.getItem(
-          TRANSLATION_CACHE_KEY,
-        );
+        const savedCache = await AsyncStorage.getItem(TRANSLATION_CACHE_KEY);
 
         if (!savedCache) return;
 
         const parsedCache: unknown = JSON.parse(savedCache);
 
-        // Solo usamos la caché si los datos guardados son un objeto válido.
+        // Solo acepta un objeto válido como caché.
         if (
           parsedCache &&
           typeof parsedCache === 'object' &&
@@ -112,13 +104,13 @@ export default function ReaderScreen() {
             parsedCache as Record<string, string>;
         }
       } catch (error) {
-        // Si falla la caché, la app sigue funcionando y puede consultar el backend.
+        // Si falla la caché, se puede seguir consultando al backend.
         console.warn('No se pudo cargar la caché de traducciones:', error);
       }
     })();
   }, []);
 
-  // Solicita una lectura al abrir la pantalla o al pulsar el botón "Otra".
+  // Genera una lectura al abrir esta pantalla o pulsar «Otra».
   useEffect(() => {
     let isScreenActive = true;
 
@@ -127,39 +119,24 @@ export default function ReaderScreen() {
       setReadingError('');
       setReading(null);
 
-      // Limpia los datos asociados a la lectura anterior.
+      // Reinicia los datos que pertenecían a la lectura anterior.
+      setQuizAnswers({});
       setSelectedWord('');
       setTranslation('');
       setTranslationError('');
-      setQuizAnswers({});
       setIsSpeaking(false);
-
-      // Detiene el audio anterior antes de empezar una lectura nueva.
-      await Speech.stop();
+      historySavedForCurrentReadingRef.current = false;
 
       try {
-        // Envía el tema y el nivel al endpoint POST /reading.
-        const response = await fetch(`${API_BASE_URL}/reading`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            topic: selectedTopic,
-            level: selectedLevel,
-          }),
-        });
+        // Detiene el audio anterior antes de iniciar otra lectura.
+        await stopSpeech();
 
-        const data = await response.json();
+        // Solicita la nueva lectura al backend.
+        const data = await generateReading(selectedTopic, selectedLevel);
 
-        // Convierte un error del backend en un mensaje para mostrar en pantalla.
-        if (!response.ok) {
-          throw new Error(data.detail ?? 'No se pudo generar la lectura.');
-        }
-
-        // Actualiza la pantalla solo si el lector sigue abierto.
+        // Evita actualizar la pantalla si el usuario ya salió de ella.
         if (isScreenActive) {
-          setReading(data as Reading);
+          setReading(data);
         }
       } catch (error) {
         if (isScreenActive) {
@@ -176,65 +153,34 @@ export default function ReaderScreen() {
       }
     }
 
-    // Inicia la solicitud de forma asíncrona.
     void requestReading();
 
-    // Evita actualizar el estado si se sale del lector durante la petición.
+    // Invalida la solicitud si cambian los parámetros o se cierra la pantalla.
     return () => {
       isScreenActive = false;
     };
   }, [selectedTopic, selectedLevel, newReadingRequest]);
 
-  // Detiene el audio si el usuario sale de la pantalla.
+  // Detiene el audio cuando el usuario abandona el lector.
   useEffect(() => {
     return () => {
-      void Speech.stop();
+      void stopSpeech();
     };
   }, []);
 
-  // Reproduce en inglés la palabra o el texto recibido.
-  async function speakEnglish(text: string) {
-    const textToSpeak = text.trim();
-
-    // No intenta reproducir texto vacío.
-    if (!textToSpeak) return;
-
-    // Detiene cualquier audio anterior para que no se superponga.
-    await Speech.stop();
-
-    setIsSpeaking(true);
-
-    Speech.speak(textToSpeak, {
-      language: 'en-US',
-      rate: 0.85,
-
-      // Actualiza el estado cuando el audio termina, se detiene o falla.
-      onDone: () => setIsSpeaking(false),
-      onStopped: () => setIsSpeaking(false),
-      onError: () => setIsSpeaking(false),
-    });
-  }
-
-  // Detiene manualmente el audio que esté reproduciéndose.
-  async function stopSpeaking() {
-    await Speech.stop();
-    setIsSpeaking(false);
-  }
-
-  // Consulta el significado de una palabra en el contexto de su oración.
+  // Busca el significado de una palabra según la oración donde aparece.
   async function translateWord(
     wordWithPunctuation: string,
     sentence: string,
   ) {
-    // Elimina signos de puntuación antes de enviar la palabra al backend.
+    // Quita puntuación para enviar al backend solo la palabra.
     const word = wordWithPunctuation
       .toLowerCase()
       .replace(/[^a-z']/g, '');
 
     if (!word) return;
 
-    // Incluye la oración en la clave porque una palabra puede tener
-    // distintos significados según el contexto.
+    // La oración forma parte de la clave porque da contexto al significado.
     const cacheKey = `${word}|${sentence}`;
 
     setSelectedWord(word);
@@ -243,10 +189,10 @@ export default function ReaderScreen() {
     setIsTranslating(true);
 
     try {
-      // Espera a que se carguen las traducciones guardadas en el dispositivo.
+      // Espera a que termine la lectura inicial de la caché.
       await cacheLoadPromiseRef.current;
 
-      // Si ya existe la traducción en caché, la muestra sin consultar al backend.
+      // Muestra inmediatamente una traducción ya guardada.
       const cachedTranslation = translationCacheRef.current[cacheKey];
 
       if (cachedTranslation) {
@@ -254,28 +200,11 @@ export default function ReaderScreen() {
         return;
       }
 
-      // Envía la palabra y su oración al endpoint POST /translate.
-      const response = await fetch(`${API_BASE_URL}/translate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          word,
-          sentence,
-        }),
-      });
-
-      const data: TranslationResponse = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail ?? 'No se pudo traducir la palabra.');
-      }
-
-      const result = data.translation ?? 'No recibimos una traducción.';
+      // Si no existe en la caché, la solicita al backend.
+      const result = await fetchWordTranslation(word, sentence);
       setTranslation(result);
 
-      // Agrega la traducción nueva a la caché y conserva las últimas 300.
+      // Guarda la nueva traducción y conserva como máximo 300 entradas.
       const entries = Object.entries({
         ...translationCacheRef.current,
         [cacheKey]: result,
@@ -287,14 +216,13 @@ export default function ReaderScreen() {
 
       translationCacheRef.current = updatedCache;
 
-      // Guarda la caché para futuras visitas.
       try {
         await AsyncStorage.setItem(
           TRANSLATION_CACHE_KEY,
           JSON.stringify(updatedCache),
         );
       } catch (storageError) {
-        // Aunque no se pueda guardar, la traducción ya se muestra en pantalla.
+        // La traducción ya se muestra aunque no se pueda guardar.
         console.warn('No se pudo guardar la traducción:', storageError);
       }
     } catch (error) {
@@ -308,37 +236,93 @@ export default function ReaderScreen() {
     }
   }
 
-  // Si el backend antiguo no envía preguntas, usamos una lista vacía.
+  // Cuando no hay preguntas, entrega una lista vacía al cuestionario.
   const questions = reading?.questions ?? [];
 
+  // Recibe cada respuesta y guarda el intento al completar el cuestionario.
+  async function handleQuizAnswer(
+    questionIndex: number,
+    optionIndex: number,
+  ) {
+    const updatedAnswers = {
+      ...quizAnswers,
+      [questionIndex]: optionIndex,
+    };
+
+    setQuizAnswers(updatedAnswers);
+
+    if (!reading || reading.questions.length === 0) return;
+    if (historySavedForCurrentReadingRef.current) return;
+
+    // Comprueba que se hayan respondido todas las preguntas.
+    const allQuestionsAnswered = reading.questions.every(
+      (_, index) => updatedAnswers[index] !== undefined,
+    );
+
+    if (!allQuestionsAnswered) return;
+
+    // Cuenta las respuestas que coinciden con el índice correcto.
+    const score = reading.questions.filter(
+      (question, index) =>
+        updatedAnswers[index] === question.correct_index,
+    ).length;
+
+    // Marca el intento antes de guardar para evitar duplicados.
+    historySavedForCurrentReadingRef.current = true;
+
+    try {
+      await saveReadingAttempt({
+        title: reading.title,
+        topic: reading.topic,
+        level: reading.level,
+        score,
+        totalQuestions: reading.questions.length,
+      });
+    } catch (error) {
+      // Permite volver a guardar si hubo un error de almacenamiento.
+      historySavedForCurrentReadingRef.current = false;
+      console.warn('No se pudo guardar el progreso:', error);
+    }
+  }
 
   return (
-    <View style={styles.screen}>
-      {/* Barra superior con botones para volver y generar otra lectura. */}
+    // Un único SafeAreaView protege toda la pantalla, incluido el encabezado.
+    <SafeAreaView
+      style={styles.screen}
+      edges={['top', 'left', 'right', 'bottom']}
+    >
+      {/* Encabezado dentro del área segura del teléfono. */}
       <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Volver a las lecturas"
-          onPress={() => router.back()}
-          style={styles.headerButton}
-        >
-          <Text style={styles.headerButtonText}>‹ Volver</Text>
-        </Pressable>
+        <View style={styles.headerSide}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Volver a las lecturas"
+            onPress={() => router.back()}
+            style={styles.headerButton}
+          >
+            <Text style={styles.headerButtonText}>‹ Volver</Text>
+          </Pressable>
+        </View>
 
         <Text style={styles.headerTitle}>Lector</Text>
 
-        <Pressable
-          accessibilityRole="button"
-          disabled={isLoading}
-          onPress={() => setNewReadingRequest((current) => current + 1)}
-          style={[styles.headerButton, isLoading && styles.disabledButton]}
-        >
-          <Text style={styles.headerButtonText}>↻ Otra</Text>
-        </Pressable>
+        <View style={[styles.headerSide, styles.headerSideRight]}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={isLoading}
+            onPress={() => setNewReadingRequest((current) => current + 1)}
+            style={[
+              styles.headerButton,
+              isLoading && styles.disabledButton,
+            ]}
+          >
+            <Text style={styles.headerButtonText}>↻ Otra</Text>
+          </Pressable>
+        </View>
       </View>
 
       {isLoading ? (
-        // Vista que aparece mientras Gemini genera la lectura.
+        // Estado visible mientras Gemini genera la lectura.
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#4435D1" />
           <Text style={styles.loadingText}>Creando una lectura nueva...</Text>
@@ -347,12 +331,13 @@ export default function ReaderScreen() {
           </Text>
         </View>
       ) : readingError ? (
-        // Vista que aparece si el backend devuelve un error.
+        // Mensaje y botón para volver a intentar si la solicitud falla.
         <View style={styles.centered}>
           <Text style={styles.errorTitle}>No pudimos crear la lectura</Text>
           <Text style={styles.errorMessage}>{readingError}</Text>
 
           <Pressable
+            accessibilityRole="button"
             onPress={() => setNewReadingRequest((current) => current + 1)}
             style={styles.primaryButton}
           >
@@ -360,7 +345,7 @@ export default function ReaderScreen() {
           </Pressable>
         </View>
       ) : reading ? (
-        // Contenido principal: lectura, cuestionario y traducción.
+        // El ScrollView permite desplazarse por la lectura y el cuestionario.
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.content}
@@ -372,20 +357,21 @@ export default function ReaderScreen() {
 
           <Text style={styles.title}>{reading.title}</Text>
 
-          {/* Indica que las palabras del artículo se pueden tocar. */}
           <View style={styles.tip}>
             <Text style={styles.tipIcon}>💡</Text>
             <Text style={styles.tipText}>
-              Toca cualquier palabra para consultar su significado en esta oración.
+              Toca cualquier palabra para consultar su significado en esta
+              oración.
             </Text>
           </View>
 
-          {/* Reproduce el título y todos los párrafos en inglés. */}
+          {/* Lee en inglés el título y todos los párrafos de la lectura. */}
           <Pressable
             accessibilityRole="button"
             onPress={() =>
               void speakEnglish(
                 `${reading.title}. ${reading.paragraphs.join(' ')}`,
+                setIsSpeaking,
               )
             }
             style={styles.audioButton}
@@ -393,18 +379,18 @@ export default function ReaderScreen() {
             <Text style={styles.audioButtonText}>🔊 Escuchar lectura</Text>
           </Pressable>
 
-          {/* Muestra el botón para detener el audio mientras se reproduce. */}
+          {/* Este botón aparece únicamente mientras se reproduce el audio. */}
           {isSpeaking && (
             <Pressable
               accessibilityRole="button"
-              onPress={() => void stopSpeaking()}
+              onPress={() => void stopSpeaking(setIsSpeaking)}
               style={styles.stopAudioButton}
             >
               <Text style={styles.stopAudioButtonText}>⏹ Detener audio</Text>
             </Pressable>
           )}
 
-          {/* Divide los párrafos en palabras individuales que se pueden tocar. */}
+          {/* Cada palabra se puede tocar para pedir su significado contextual. */}
           {reading.paragraphs.map((paragraph, paragraphIndex) => (
             <Text
               key={`paragraph-${paragraphIndex}`}
@@ -431,20 +417,14 @@ export default function ReaderScreen() {
             </Text>
           ))}
 
-          
-          {/* Este componente muestra las preguntas y recibe las respuestas guardadas aquí. */}
+          {/* El cuestionario llama a handleQuizAnswer al tocar una opción. */}
           <ComprehensionQuiz
             questions={questions}
             answers={quizAnswers}
-            onAnswer={(questionIndex, optionIndex) =>
-            setQuizAnswers((currentAnswers) => ({
-                ...currentAnswers,
-               [questionIndex]: optionIndex,
-            }))
-         }
-/>
+            onAnswer={handleQuizAnswer}
+          />
 
-          {/* Muestra la traducción de la última palabra tocada. */}
+          {/* Muestra la traducción de la última palabra seleccionada. */}
           {selectedWord !== '' && (
             <View style={styles.translationCard}>
               <Text style={styles.translationLabel}>SIGNIFICADO</Text>
@@ -456,10 +436,11 @@ export default function ReaderScreen() {
                   : translationError || translation}
               </Text>
 
-              {/* Reproduce la palabra seleccionada en inglés. */}
               <Pressable
                 accessibilityRole="button"
-                onPress={() => void speakEnglish(selectedWord)}
+                onPress={() =>
+                  void speakEnglish(selectedWord, setIsSpeaking)
+                }
                 style={styles.audioButton}
               >
                 <Text style={styles.audioButtonText}>🔊 Escuchar palabra</Text>
@@ -467,32 +448,39 @@ export default function ReaderScreen() {
             </View>
           )}
 
-          {/* Identifica el modelo que generó la lectura. */}
           <Text style={styles.modelInfo}>
             Lectura generada con {reading.model_used}
           </Text>
         </ScrollView>
       ) : null}
-    </View>
+    </SafeAreaView>
   );
 }
 
-// Estilos visuales de las tarjetas, botones, preguntas y textos.
+// Estilos de la pantalla, el encabezado, los textos y los botones.
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#F6F5FF',
   },
   header: {
+    minHeight: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
     paddingHorizontal: 16,
-    paddingVertical: 12,
     backgroundColor: '#FFFFFF',
   },
+  headerSide: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+  },
+  headerSideRight: {
+    alignItems: 'flex-end',
+  },
   headerButton: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: 16,
@@ -507,19 +495,22 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   headerTitle: {
+    flex: 1,
     color: '#191A30',
     fontSize: 16,
     fontWeight: '700',
+    textAlign: 'center',
   },
   scroll: {
     flex: 1,
   },
   content: {
     width: '100%',
-    maxWidth: 850,
+    maxWidth: 760,
     alignSelf: 'center',
-    padding: 20,
-    paddingBottom: 40,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 24,
   },
   eyebrow: {
     marginTop: 10,
@@ -568,9 +559,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#DCD8FF',
     color: '#3425C2',
   },
-
-
-  // Apariencia de la tarjeta de traducción.
   translationCard: {
     marginTop: 4,
     padding: 17,
@@ -597,10 +585,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
-
-  // Apariencia de los botones de audio.
   audioButton: {
+    minHeight: 44,
     alignSelf: 'flex-start',
+    justifyContent: 'center',
     marginTop: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -613,7 +601,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   stopAudioButton: {
+    minHeight: 44,
     alignSelf: 'flex-start',
+    justifyContent: 'center',
     marginTop: 8,
     marginBottom: 14,
     paddingHorizontal: 14,
@@ -626,15 +616,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-
-  // Texto pequeño que indica el modelo usado.
   modelInfo: {
     marginTop: 20,
     color: '#89899A',
     fontSize: 11,
   },
-
-  // Estilos para las pantallas de carga y error.
   centered: {
     flex: 1,
     alignItems: 'center',
@@ -667,6 +653,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   primaryButton: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderRadius: 20,
