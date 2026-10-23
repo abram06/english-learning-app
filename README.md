@@ -1,116 +1,174 @@
-# 🎮 Aprendiendo y Jugando
+# Aprendiendo y Jugando
 
-> Learn English through a gamified, story-driven mobile experience.
-> Aprende inglés a través de una experiencia móvil gamificada, tipo aventura.
+Una aplicación móvil para practicar inglés leyendo historias, escuchando su pronunciación y aprendiendo palabras dentro de su contexto.
 
-![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
-![React Native](https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
-![Expo](https://img.shields.io/badge/Expo-000020?style=for-the-badge&logo=expo&logoColor=white)
-![Status](https://img.shields.io/badge/status-in_progress-yellow?style=for-the-badge)
+## ¿Qué puedes hacer con la aplicación?
 
----
+La idea es que puedas practicar inglés de una forma sencilla y a tu ritmo:
 
-## 📱 Sobre el proyecto / About
+- Elegir un tema y un nivel de dificultad.
+- Generar una lectura en inglés con ayuda de Gemini.
+- Escuchar la lectura completa o una palabra.
+- Tocar una palabra para consultar su significado en el contexto de la oración.
+- Responder preguntas sobre la lectura y ver comentarios de las respuestas.
+- Consultar tu meta diaria, racha e historial guardado en el dispositivo.
 
-**ES:** Una app móvil para aprender inglés con un enfoque gamificado. El onboarding simula una pequeña escena de videojuego 2D: un personaje entra caminando a la ciudad, te pregunta tu nombre con un efecto de texto tipo "máquina de escribir", y te acompaña en la aventura de aprender inglés.
+La aplicación está en desarrollo. Por ahora se ha probado en Android con Expo Go; todavía no está publicada en las tiendas.
 
-**EN:** A mobile app for learning English with a gamified approach. The onboarding simulates a small 2D game scene: a character walks into the city, asks for your name with a typewriter text effect, and joins you on the adventure of learning English.
+## Capturas
 
----
+Guarda las imágenes en `mobile/docs/` usando estos nombres:
 
-## 🖼️ Preview
-
-![Onboarding screenshot](./mobile/docs/screenshot-onboarding.png)
-
----
-
-## ✨ Características / Features
-
-- 🚶 **Onboarding animado** — personaje que camina, saluda y se despide con animaciones personalizadas (`Animated API`)
-- ⌨️ **Diálogos estilo videojuego** — texto que se escribe letra por letra
-- 🧠 **Estado global con Context API** — el nombre del usuario se comparte entre pantallas sin prop-drilling
-- 💾 **Persistencia con AsyncStorage** — la app recuerda al usuario y salta el onboarding en próximas visitas
-- 🗂️ **Arquitectura por features** — cada módulo (`onboarding`, próximamente `lessons`, `progress`) tiene su propia carpeta con componentes, pantallas y lógica
-
----
-
-## 🛠️ Stack técnico / Tech stack
-
-| Parte | Tecnología |
+| Inicio | Selección de lectura |
 |---|---|
-| App móvil | React Native + Expo |
-| Lenguaje | TypeScript |
-| Navegación | Expo Router |
-| Estado global | React Context API |
-| Persistencia | AsyncStorage |
-| Backend *(próximamente)* | Python + FastAPI |
-| Base de datos *(próximamente)* | PostgreSQL |
+| ![Pantalla de inicio](./mobile/docs/home.png) | ![Selección de lectura](./mobile/docs/lecturas.png) |
 
----
+| Lector | Cuestionario |
+|---|---|
+| ![Pantalla del lector](./mobile/docs/lector.png) | ![Cuestionario](./mobile/docs/quiz.png) |
 
+## ¿Cómo funciona?
 
-## 📂 Estructura del proyecto / Project structure
+La aplicación móvil se comunica con un backend. El backend recibe la solicitud y consulta a Gemini para generar una lectura o ayudar con una traducción.
 
-```
-mobile/
-└── src/
-    ├── app/                  # Rutas (Expo Router)
-    │   ├── index.tsx         # Punto de entrada — decide onboarding o Home
-    │   └── main/             # Pantallas principales (tabs)
-    ├── context/              # Estado global (UserContext)
-    └── features/
-        └── onboarding/
-            ├── assets/       # Imágenes del onboarding
-            ├── components/   # Character, DialogueBox, NameInput, SceneBackground
-            └── screens/      # WelcomeScreen
+```text
+Aplicación móvil → Backend FastAPI → Gemini
+Aplicación móvil ← Backend FastAPI ← Gemini
 ```
 
----
+La app no contiene la clave de Gemini. Esa clave se configura en el backend para evitar incluirla en el código que se instala en el teléfono.
 
----
+## Tecnologías utilizadas
 
-## 🚀 Cómo correrlo / Getting started
+- **React Native:** permite crear la interfaz móvil.
+- **Expo:** facilita el desarrollo y las pruebas en dispositivos Android y iPhone.
+- **TypeScript:** ayuda a organizar los datos y detectar errores en el código.
+- **Expo Router:** organiza las pantallas y la navegación.
+- **React Context:** comparte datos del usuario entre distintas partes de la app.
+- **AsyncStorage y SQLite:** guardan información localmente en el dispositivo.
+- **Expo Speech:** reproduce el audio de las lecturas y palabras.
+- **Python y FastAPI:** reciben las solicitudes de la aplicación y se comunican con Gemini.
+- **Google Gemini API:** genera las lecturas y apoya las funciones de vocabulario y comprensión.
 
-```bash
-# Clona el repositorio
-git clone https://github.com/abram06/english-learning-app.git
+## Cómo está organizado el proyecto
 
-# Entra a la carpeta del proyecto móvil
-cd english-learning-app/mobile
+El código está dividido en dos partes principales:
 
-# Instala las dependencias
-npm install
+```text
+APP_ENGLISH/
+├── backend/
+│   ├── main.py
+│   ├── requirements.txt
+│   └── .gitignore
+└── mobile/
+    ├── src/
+    │   ├── app/
+    │   │   ├── main/
+    │   │   ├── index.tsx
+    │   │   └── reader.tsx
+    │   ├── components/
+    │   ├── context/
+    │   └── features/
+    │       ├── onboarding/
+    │       └── reading/
+    │           ├── components/
+    │           ├── services/
+    │           └── types.ts
+    └── package.json
+```
 
-# Inicia el servidor de desarrollo
+- En `backend/` está la API hecha con FastAPI.
+- En `mobile/src/app/` están las pantallas y rutas de la aplicación.
+- En `features/onboarding/` está el flujo de bienvenida.
+- En `features/reading/` está organizada la función de lectura: componentes, servicios y tipos de datos.
+- En `services/` se encuentran tareas como llamar al backend, reproducir audio y guardar el historial.
+
+Esta organización permite agregar funciones sin poner toda la lógica en una sola pantalla.
+
+## Cómo ejecutar el proyecto durante el desarrollo
+
+Para probar la app en un teléfono, necesitas iniciar el backend y Expo en dos terminales. La computadora y el teléfono deben poder comunicarse por la misma red.
+
+### 1. Inicia el backend
+
+En PowerShell:
+
+```powershell
+cd C:\MiPortafolio\APP_ENGLISH\backend
+.\venv\Scripts\Activate.ps1
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+El backend necesita una clave de Gemini configurada localmente en `backend/.env`:
+
+```env
+GEMINI_API_KEY=tu_clave_aqui
+```
+
+No subas ese archivo a GitHub ni compartas su contenido.
+
+### 2. Configura la dirección del backend
+
+Cuando pruebes la app en un teléfono, `127.0.0.1` apunta al teléfono. Por eso, durante el desarrollo local, la app debe usar la dirección IP de la computadora.
+
+La dirección se cambia en:
+
+```text
+mobile/src/features/reading/services/readingApi.ts
+```
+
+Configura `API_BASE_URL` con la IP local de tu computadora, por ejemplo:
+
+```ts
+const API_BASE_URL = 'http://192.168.1.10:8000';
+```
+
+Usa la IP que tenga tu computadora; el ejemplo puede ser diferente en tu red.
+
+### 3. Inicia la aplicación móvil
+
+Abre otra terminal:
+
+```powershell
+cd C:\MiPortafolio\APP_ENGLISH\mobile
 npx expo start
 ```
 
-Luego presiona `w` para abrirlo en el navegador, o escanea el QR con la app **Expo Go** en tu teléfono.
+Abre Expo Go en el teléfono y escanea el código QR que aparece en la terminal.
 
----
+## Decisiones que tomé durante el desarrollo
 
-## 🧩 Decisiones técnicas / Technical decisions
+- Separé la app móvil del backend para que la clave de Gemini permanezca en el servidor.
+- Organicé las funciones por áreas, como `onboarding` y `reading`, para facilitar el mantenimiento.
+- Separé el audio y las llamadas al backend de la interfaz de usuario.
+- Mantengo el historial en el dispositivo. Por ahora no hay cuentas ni sincronización entre teléfonos.
+- Me enfoqué en la experiencia móvil y probé la aplicación en Android con Expo Go.
 
-- **Expo Router sobre React Navigation manual** — permite enrutamiento basado en archivos, similar a Next.js, reduciendo configuración inicial.
-- **Context API en vez de Redux** — para el alcance actual del proyecto (un solo valor global: el usuario), Context es suficiente y evita overhead innecesario.
-- **Animaciones con la API nativa `Animated`** — en vez de librerías externas, para entender a fondo cómo funcionan las animaciones antes de migrar a algo como Reanimated o Rive.
-- **Arquitectura por features** — cada funcionalidad (onboarding, y las que vienen) es autocontenida, facilitando escalar el proyecto sin que los módulos se mezclen entre sí.
+## Avances y siguientes pasos
 
----
+Hasta ahora, el proyecto incluye:
 
-## 🗺️ Roadmap
+- [x] Flujo de bienvenida y captura del nombre.
+- [x] Lecturas generadas mediante el backend y Gemini.
+- [x] Consulta de vocabulario en contexto.
+- [x] Audio para leer textos y palabras.
+- [x] Cuestionario de comprensión.
+- [x] Meta diaria, racha e historial local.
 
-- [x] Onboarding animado con personaje, diálogos y captura de nombre
-- [x] Persistencia de sesión con AsyncStorage
-- [ ] Backend con FastAPI + PostgreSQL
-- [ ] Sistema de lecciones y progreso
-- [ ] Autenticación de usuarios
-- [ ] Integración de IA para práctica conversacional
+Me gustaría continuar con:
 
----
+- [ ] Completar la práctica de escritura.
+- [ ] Añadir más ejercicios de vocabulario.
+- [ ] Publicar el backend para que no dependa de mi computadora.
+- [ ] Sincronizar el progreso entre dispositivos.
+- [ ] Preparar la aplicación para publicarla en las tiendas.
 
-## 👤 Autor / Author
+## Lo que aprendí
 
-**Abram** — construyendo este proyecto como parte de mi aprendizaje en desarrollo móvil.
+En este proyecto he practicado desarrollo móvil con React Native y Expo, organización de código con TypeScript, creación de una API con FastAPI e integración con Gemini. También aprendí a diagnosticar problemas de conexión entre el teléfono y la computadora y a probar la app en un dispositivo Android.
 
-Si trabajas en una empresa relacionada con desarrollo mobile / React Native y te interesa el proyecto, o tienes feedback, ¡hablemos! 🙌
+## Autor
+
+**Abram**
+
+Este proyecto sigue en desarrollo. Si tienes comentarios o sugerencias, serán bienvenidos.
