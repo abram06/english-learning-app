@@ -85,6 +85,26 @@ class GeneratedReading(BaseModel):
     paragraphs: list[str]
     questions: list[ComprehensionQuestion]
 
+# El nivel lo elige la persona en la app.
+class WritingChallengeRequest(BaseModel):
+    level: str
+
+
+# Cada palabra sugerida incluye su significado.
+class WritingVocabularyItem(BaseModel):
+    word: str
+    meaning: str
+
+
+# Formato que Gemini debe devolver para un reto de escritura.
+class GeneratedWritingChallenge(BaseModel):
+    topic: str
+    title: str
+    instruction: str
+    minimum_words: int
+    connectors: list[str]
+    vocabulary: list[WritingVocabularyItem]
+
 
 def ask_gemini(prompt: str, config=None):
     """
@@ -291,6 +311,76 @@ Además, crea exactamente 3 preguntas de comprensión:
         "level": data.level,
         "model_used": model_used,
     }
+
+@app.post("/writing/challenge")
+def generate_writing_challenge(data: WritingChallengeRequest):
+    """Genera un reto de escritura y vocabulario para el nivel elegido."""
+
+    # Aceptamos solo los tres niveles que ofrecerá la app.
+    allowed_levels = {"Básico", "Intermedio", "Avanzado"}
+    if data.level not in allowed_levels:
+        raise HTTPException(
+            status_code=422,
+            detail="El nivel debe ser Básico, Intermedio o Avanzado.",
+        )
+
+    # Este código ayuda a pedir un tema diferente en cada solicitud.
+    variation_code = secrets.token_hex(6)
+
+    prompt = f"""Crea un reto ORIGINAL de escritura en inglés para una app educativa.
+
+Nivel elegido por el estudiante: "{data.level}"
+Código para variar el tema: "{variation_code}"
+
+Devuelve:
+- Un tema concreto y diferente de retos típicos anteriores.
+- Un título breve en inglés.
+- Una instrucción clara en español que explique qué debe escribir.
+- Un mínimo de palabras apropiado para el nivel elegido.
+- De 3 a 5 conectores en inglés.
+- De 5 a 8 palabras de vocabulario en inglés, cada una con su significado breve en español.
+
+Adapta el tema, la gramática, los conectores y el vocabulario al nivel.
+No incluyas una redacción de ejemplo ni las respuestas del estudiante.
+Devuelve únicamente los datos con el formato JSON solicitado."""
+
+    challenge_config = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=GeneratedWritingChallenge,
+        max_output_tokens=1200,
+    )
+
+    try:
+        text, model_used = ask_gemini(prompt, config=challenge_config)
+    except errors.APIError:
+        raise HTTPException(
+            status_code=503,
+            detail="No pudimos generar el reto ahora. Intenta de nuevo.",
+        )
+
+    try:
+        challenge = GeneratedWritingChallenge.model_validate_json(text)
+    except ValueError:
+        raise HTTPException(
+            status_code=502,
+            detail="La IA devolvió un reto con un formato inesperado. Intenta otra vez.",
+        )
+
+    # Convertimos minimum_words a minimumWords para que coincida con TypeScript.
+    return {
+        "topic": challenge.topic,
+        "title": challenge.title,
+        "instruction": challenge.instruction,
+        "level": data.level,
+        "minimumWords": challenge.minimum_words,
+        "connectors": challenge.connectors,
+        "vocabulary": [
+            {"word": item.word, "meaning": item.meaning}
+            for item in challenge.vocabulary
+        ],
+        "model_used": model_used,
+    }
+
 
 
 @app.get("/models")
