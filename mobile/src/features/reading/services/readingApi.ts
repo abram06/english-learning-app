@@ -2,7 +2,7 @@ import type { Reading } from '../types';
 
 // Dirección del backend durante el desarrollo en tu computadora.
 // Para usar la app en un teléfono físico o publicarla, habrá que cambiarla.
-const API_BASE_URL = 'http://192.168.18.48:8000';
+const API_BASE_URL = 'https://english-learning-app-b7og.onrender.com';
 
 // Solicita al backend una lectura según el tema y el nivel.
 export async function generateReading(
