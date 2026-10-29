@@ -1,5 +1,9 @@
 // Guarda localmente el resultado del cuestionario.
-import { saveReadingAttempt } from '@/features/reading/services/readingHistory';
+import {
+  saveReadingAttempt,
+  saveStudySession,
+} from '@/features/reading/services/readingHistory';
+
 
 // Servicios de lectura, traducción y pronunciación.
 import {
@@ -17,8 +21,13 @@ import type { Reading } from '@/features/reading/types';
 import ComprehensionQuiz from '@/features/reading/components/ComprehensionQuiz';
 
 // Herramientas de navegación y estado de React.
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import {
+  useFocusEffect,
+  useLocalSearchParams,
+  useRouter,
+} from 'expo-router';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Guarda traducciones en el dispositivo.
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -26,12 +35,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // Elementos visuales de React Native.
 import {
   ActivityIndicator,
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+
 
 // Mantiene la pantalla dentro del área visible del teléfono,
 // respetando la barra de estado, la cámara y los bordes seguros.
@@ -58,6 +69,46 @@ export default function ReaderScreen() {
 
   // Lectura que genera y devuelve el backend.
   const [reading, setReading] = useState<Reading | null>(null);
+
+
+    // Cuenta tiempo solo cuando hay una lectura abierta y la app está activa.
+  useFocusEffect(
+    useCallback(() => {
+      if (!reading) return;
+
+      let segmentStartedAt = Date.now();
+
+      const saveCurrentSegment = () => {
+        if (segmentStartedAt === 0) return;
+
+        const elapsedMilliseconds = Date.now() - segmentStartedAt;
+        const seconds = Math.floor(elapsedMilliseconds / 1000);
+        segmentStartedAt = 0;
+
+        if (seconds > 0) {
+          void saveStudySession(seconds).catch((error) => {
+            console.warn('No se pudo guardar el tiempo de estudio:', error);
+          });
+        }
+      };
+
+      const subscription = AppState.addEventListener('change', (nextState) => {
+        if (nextState === 'active' && segmentStartedAt === 0) {
+          // Al regresar a la app, comienza un nuevo segmento de tiempo.
+          segmentStartedAt = Date.now();
+        } else if (nextState !== 'active') {
+          // Guarda el segmento cuando la app pasa a segundo plano.
+          saveCurrentSegment();
+        }
+      });
+
+      return () => {
+        // También guarda el segmento al salir del lector.
+        saveCurrentSegment();
+        subscription.remove();
+      };
+    }, [reading]),
+  );
 
   // Estados para mostrar carga o errores.
   const [isLoading, setIsLoading] = useState(true);

@@ -1,7 +1,14 @@
 import ReadingHistory from '@/features/reading/components/ReadingHistory';
-import { useRouter } from 'expo-router';
+
 import { useUser } from '@/context/UserContext';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import {
+  getReadingHistory,
+  getTodayStudySeconds,
+} from '@/features/reading/services/readingHistory';
 
 // Colores que usaremos en esta pantalla.
 const COLORS = {
@@ -15,10 +22,122 @@ const COLORS = {
   border: '#E7E5F4',
 };
 
+const WEEK_DAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+
+function getLocalDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
 export default function HomeScreen() {
   // Recupera el nombre que el usuario escribió durante la bienvenida.
   const { userName } = useUser();
   const router = useRouter();
+
+  const [activeWeekDays, setActiveWeekDays] = useState<boolean[]>(
+  Array(7).fill(false),
+);
+const [streakCount, setStreakCount] = useState(0);
+
+const [todayStudySeconds, setTodayStudySeconds] = useState(0);
+
+const dailyGoalSeconds = 20 * 60;
+const progressPercent = Math.min(
+  100,
+  Math.floor((todayStudySeconds / dailyGoalSeconds) * 100),
+);
+
+const studiedTimeLabel =
+  `${Math.floor(todayStudySeconds / 60)}:` +
+  `${String(todayStudySeconds % 60).padStart(2, '0')} / 20 min`;
+
+const minutesRemaining = Math.ceil(
+  Math.max(0, dailyGoalSeconds - todayStudySeconds) / 60,
+);
+
+
+// Se actualiza al volver al Inicio, por ejemplo después de terminar una lectura.
+useFocusEffect(
+  useCallback(() => {
+    let isScreenActive = true;
+
+    async function loadWeeklyProgress() {
+      try {
+        const history = await getReadingHistory();
+        const studySeconds = await getTodayStudySeconds();
+        const completedDateKeys = new Set<string>();
+
+        // SQLite guarda CURRENT_TIMESTAMP en UTC.
+        // Lo convertimos a la fecha local del teléfono para marcar el día correcto.
+        for (const attempt of history) {
+          const timestamp = attempt.completed_at.includes('T')
+            ? attempt.completed_at
+            : `${attempt.completed_at.replace(' ', 'T')}Z`;
+
+          const completedAt = new Date(timestamp);
+
+          if (!Number.isNaN(completedAt.getTime())) {
+            completedDateKeys.add(getLocalDateKey(completedAt));
+          }
+        }
+
+        const today = new Date();
+        const monday = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate(),
+        );
+        monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+
+        const weekDateKeys = Array.from({ length: 7 }, (_, index) => {
+          const date = new Date(monday);
+          date.setDate(monday.getDate() + index);
+          return getLocalDateKey(date);
+        });
+
+        // Cada círculo se activa si hubo un cuestionario completado ese día.
+        const weekActivity = weekDateKeys.map((dateKey) =>
+          completedDateKeys.has(dateKey),
+        );
+
+        // Si hoy todavía no hay actividad, calcula la racha hasta ayer.
+        const streakCursor = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate(),
+        );
+
+        if (!completedDateKeys.has(getLocalDateKey(streakCursor))) {
+          streakCursor.setDate(streakCursor.getDate() - 1);
+        }
+
+        let consecutiveDays = 0;
+
+        while (completedDateKeys.has(getLocalDateKey(streakCursor))) {
+          consecutiveDays += 1;
+          streakCursor.setDate(streakCursor.getDate() - 1);
+        }
+
+        if (isScreenActive) {
+          setTodayStudySeconds(studySeconds);
+          setActiveWeekDays(weekActivity);
+          setStreakCount(consecutiveDays);
+        }
+      } catch (error) {
+        console.error('No se pudo cargar la actividad semanal:', error);
+      }
+    }
+
+    void loadWeeklyProgress();
+
+    return () => {
+      isScreenActive = false;
+    };
+  }, []),
+);
 
   return (
     // ScrollView permite desplazar la pantalla en teléfonos pequeños.
@@ -42,7 +161,9 @@ export default function HomeScreen() {
 
         <View style={styles.streakBadge}>
           <Text>🔥</Text>
-          <Text style={styles.streakText}>0 días</Text>
+          <Text style={styles.streakText}>
+  {streakCount} {streakCount === 1 ? 'día' : 'días'}
+</Text>
         </View>
       </View>
 
@@ -59,38 +180,72 @@ export default function HomeScreen() {
       <View style={styles.goalCard}>
         <View style={styles.goalTopRow}>
           <Text style={styles.goalLabel}>🎯 Meta diaria</Text>
-          <Text style={styles.goalPercent}>0%</Text>
+          
+          <Text style={styles.goalPercent}>{progressPercent}%</Text>
         </View>
 
-        <Text style={styles.goalTime}>0 / 20 min</Text>
+        <Text style={styles.goalTime}>{studiedTimeLabel}</Text>
+
+        
+
+<Text style={styles.goalDescription}>
+  {progressPercent === 100
+    ? '¡Meta diaria completada!'
+    : `Te faltan ${minutesRemaining} min para alcanzar tu meta.`}
+</Text>
         <Text style={styles.goalDescription}>
           Completa una actividad para empezar a registrar tu avance.
         </Text>
 
         {/* La barra está vacía hasta que conectemos el seguimiento. */}
         <View style={styles.progressTrack}>
-          <View style={styles.progressFill} />
+
+          <View
+  style={[
+    styles.progressFill,
+    { width: `${progressPercent}%` },
+  ]}
+/>
+
         </View>
       </View>
 
-      {/* Resumen semanal de actividad. Todavía no guarda días completados. */}
+     {/* Resumen semanal calculado a partir del historial guardado en SQLite. */}
       <View style={styles.streakCard}>
         <View style={styles.sectionHeader}>
           <Text style={styles.cardTitle}>Racha semanal</Text>
           <Text style={styles.smallBadge}>¡Tú puedes!</Text>
         </View>
-
         <View style={styles.weekRow}>
-          {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((day, index) => (
-            <View key={`${day}-${index}`} style={styles.dayColumn}>
-              <Text style={styles.dayLetter}>{day}</Text>
-              <View style={styles.dayCircle}>
-                <Text style={styles.dayIcon}>○</Text>
-              </View>
-            </View>
-          ))}
+  {WEEK_DAYS.map((day, index) => {
+    const isActive = activeWeekDays[index] ?? false;
+
+    return (
+      <View key={`${day}-${index}`} style={styles.dayColumn}>
+        <Text style={styles.dayLetter}>{day}</Text>
+        <View
+          style={[
+            styles.dayCircle,
+            isActive && styles.dayCircleActive,
+          ]}
+        >
+          <Text
+            style={[
+              styles.dayIcon,
+              isActive && styles.dayIconActive,
+            ]}
+          >
+            {isActive ? '✓' : '○'}
+          </Text>
         </View>
       </View>
+    );
+  })}
+</View>
+      </View>
+      
+
+
 
       {/* Accesos visuales a las actividades que construiremos después. */}
       <Text style={styles.sectionTitle}>ELIGE TU PRÁCTICA</Text>
@@ -295,6 +450,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  dayCircleActive: {
+  backgroundColor: COLORS.green,
+},
+dayIconActive: {
+  color: '#FFFFFF',
+  fontWeight: '800',
+},
   dayIcon: {
     color: COLORS.primary,
     fontSize: 18,

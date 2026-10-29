@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
-// Describe los datos de una lectura que se guardarán en el historial.
+// Datos que guardamos cuando se completa un cuestionario.
 export type ReadingAttempt = {
   title: string;
   topic: string;
@@ -9,10 +9,10 @@ export type ReadingAttempt = {
   totalQuestions: number;
 };
 
-// Abre o crea el archivo de la base de datos local.
+// Abre la base de datos local o la crea si aún no existe.
 const databasePromise = SQLite.openDatabaseAsync('english-learning.db');
 
-// Crea la tabla si todavía no existe.
+// Crea las tablas necesarias y devuelve la conexión a SQLite.
 async function getDatabase() {
   const database = await databasePromise;
 
@@ -26,6 +26,12 @@ async function getDatabase() {
       total_questions INTEGER NOT NULL,
       completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS study_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      study_date TEXT NOT NULL,
+      duration_seconds INTEGER NOT NULL CHECK (duration_seconds > 0)
+    );
   `);
 
   return database;
@@ -35,7 +41,6 @@ async function getDatabase() {
 export async function saveReadingAttempt(attempt: ReadingAttempt) {
   const database = await getDatabase();
 
-  // Los signos ? son parámetros; SQLite coloca ahí los valores de forma segura.
   await database.runAsync(
     `INSERT INTO reading_history
       (title, topic, level, score, total_questions)
@@ -47,21 +52,73 @@ export async function saveReadingAttempt(attempt: ReadingAttempt) {
     attempt.totalQuestions,
   );
 }
-// Representa un intento guardado en SQLite, incluida su fecha.
+
+// Representa un intento guardado en SQLite.
 export type ReadingHistoryEntry = ReadingAttempt & {
   id: number;
   completed_at: string;
 };
 
-// Lee el historial y devuelve primero los intentos más recientes.
+// Lee los intentos guardados, empezando por el más reciente.
 export async function getReadingHistory(): Promise<ReadingHistoryEntry[]> {
   const database = await getDatabase();
 
   return database.getAllAsync<ReadingHistoryEntry>(`
-    SELECT id, title, topic, level, score,
-           total_questions, completed_at
+    SELECT
+      id,
+      title,
+      topic,
+      level,
+      score,
+      total_questions,
+      completed_at
     FROM reading_history
     ORDER BY completed_at DESC, id DESC
   `);
 }
 
+// Devuelve la fecha local de hoy en formato YYYY-MM-DD.
+function getTodayDateKey(): string {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+// Guarda en SQLite los segundos de una sesión de estudio.
+export async function saveStudySession(
+  durationSeconds: number,
+): Promise<void> {
+  const seconds = Math.floor(durationSeconds);
+
+  // Ignora valores inválidos o sesiones de cero segundos.
+  if (!Number.isFinite(seconds) || seconds <= 0) return;
+
+  const database = await getDatabase();
+
+  await database.runAsync(
+    `INSERT INTO study_sessions (study_date, duration_seconds)
+     VALUES (?, ?)`,
+    getTodayDateKey(),
+    seconds,
+  );
+}
+
+// Suma los segundos de estudio registrados para hoy.
+export async function getTodayStudySeconds(): Promise<number> {
+  const database = await getDatabase();
+
+  const row = await database.getFirstAsync<{
+    total_seconds: number | null;
+  }>(
+    `SELECT SUM(duration_seconds) AS total_seconds
+     FROM study_sessions
+     WHERE study_date = ?`,
+    getTodayDateKey(),
+  );
+
+  // SUM devuelve null cuando aún no hay sesiones.
+  return row?.total_seconds ?? 0;
+}
