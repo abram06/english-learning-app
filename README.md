@@ -2,18 +2,15 @@
 
 Una aplicación móvil para practicar inglés leyendo historias, escuchando su pronunciación y aprendiendo palabras dentro de su contexto.
 
-## ¿Qué puedes hacer con la aplicación?
+## ¿Qué puedes hacer con la app?
 
-La idea es que puedas practicar inglés de una forma sencilla y a tu ritmo:
+- Crear lecturas en inglés según el tema y el nivel que elijas.
+- Responder preguntas de comprensión y consultar tu resultado.
+- Tocar palabras de la lectura para ver su significado en español.
+- Escuchar la lectura y las palabras con una voz inglesa disponible en el dispositivo.
+- Consultar el historial de lecturas y el tiempo de estudio del día.
+- Ver una racha semanal basada en los días en que completas lecturas.
 
-- Elegir un tema y un nivel de dificultad.
-- Generar una lectura en inglés con ayuda de Gemini.
-- Escuchar la lectura completa o una palabra.
-- Tocar una palabra para consultar su significado en el contexto de la oración.
-- Responder preguntas sobre la lectura y ver comentarios de las respuestas.
-- Consultar tu meta diaria, racha e historial guardado en el dispositivo.
-
-La aplicación está en desarrollo. Por ahora se ha probado en Android con Expo Go; todavía no está publicada en las tiendas.
 
 ## Capturas
 
@@ -40,15 +37,14 @@ La app no contiene la clave de Gemini. Esa clave se configura en el backend para
 
 ## Tecnologías utilizadas
 
-- **React Native:** permite crear la interfaz móvil.
-- **Expo:** facilita el desarrollo y las pruebas en dispositivos Android y iPhone.
-- **TypeScript:** ayuda a organizar los datos y detectar errores en el código.
-- **Expo Router:** organiza las pantallas y la navegación.
-- **React Context:** comparte datos del usuario entre distintas partes de la app.
-- **AsyncStorage y SQLite:** guardan información localmente en el dispositivo.
-- **Expo Speech:** reproduce el audio de las lecturas y palabras.
-- **Python y FastAPI:** reciben las solicitudes de la aplicación y se comunican con Gemini.
-- **Google Gemini API:** genera las lecturas y apoya las funciones de vocabulario y comprensión.
+- **React Native y Expo SDK 58:** aplicación móvil para Android e iOS.
+- **TypeScript:** lenguaje usado en la aplicación.
+- **Expo Router:** navegación entre pantallas.
+- **SQLite local:** guarda el historial y el tiempo de estudio en el dispositivo.
+- **FastAPI y Python:** backend que recibe las solicitudes de la app.
+- **Gemini:** genera las lecturas y preguntas desde el backend.
+- **Render:** aloja el backend para que pueda recibir solicitudes cuando la laptop está apagada.
+
 
 ## Cómo está organizado el proyecto
 
